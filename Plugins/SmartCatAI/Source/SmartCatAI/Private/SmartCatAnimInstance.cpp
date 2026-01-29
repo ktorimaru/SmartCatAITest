@@ -3,6 +3,8 @@
 #include "SmartCatAnimInstance.h"
 #include "SmartCatAICharacter.h"
 #include "GameFramework/CharacterMovementComponent.h"
+#include "Components/SkeletalMeshComponent.h"
+#include "DrawDebugHelpers.h"
 
 USmartCatAnimInstance::USmartCatAnimInstance()
 	: CatCharacter(nullptr)
@@ -61,6 +63,203 @@ void USmartCatAnimInstance::UpdateMovementState(float DeltaSeconds)
 
 void USmartCatAnimInstance::UpdateIKTargets(float DeltaSeconds)
 {
-	// IK target calculation will be implemented here
-	// This is where foot placement traces and target solving will occur
+	// Cache mesh reference
+	if (!CachedMesh)
+	{
+		CachedMesh = GetSkelMeshComponent();
+		if (!CachedMesh)
+		{
+			return;
+		}
+	}
+
+	// Determine if IK should be active
+	bIKEnabled = ShouldEnableIK();
+
+	// Target alpha based on IK enable state
+	const float TargetAlpha = bIKEnabled ? 1.0f : 0.0f;
+
+	if (!bIKEnabled)
+	{
+		// Smoothly blend out IK
+		IKAlpha_FrontLeft = FMath::FInterpTo(IKAlpha_FrontLeft, 0.0f, DeltaSeconds, IKInterpSpeed);
+		IKAlpha_FrontRight = FMath::FInterpTo(IKAlpha_FrontRight, 0.0f, DeltaSeconds, IKInterpSpeed);
+		IKAlpha_BackLeft = FMath::FInterpTo(IKAlpha_BackLeft, 0.0f, DeltaSeconds, IKInterpSpeed);
+		IKAlpha_BackRight = FMath::FInterpTo(IKAlpha_BackRight, 0.0f, DeltaSeconds, IKInterpSpeed);
+		PelvisAlpha = FMath::FInterpTo(PelvisAlpha, 0.0f, DeltaSeconds, PelvisInterpSpeed);
+		return;
+	}
+
+	// Perform traces for each foot
+	FVector HitLocation, HitNormal;
+
+	// Front Left
+	if (TraceFootToGround(BoneName_FrontLeft, HitLocation, HitNormal))
+	{
+		RawFootLocation_FrontLeft = HitLocation + FVector(0, 0, FootHeight);
+		FVector BoneLocation = CachedMesh->GetSocketLocation(BoneName_FrontLeft);
+		FootOffset_FrontLeft = CalculateFootOffset(RawFootLocation_FrontLeft, BoneLocation);
+	}
+
+	// Front Right
+	if (TraceFootToGround(BoneName_FrontRight, HitLocation, HitNormal))
+	{
+		RawFootLocation_FrontRight = HitLocation + FVector(0, 0, FootHeight);
+		FVector BoneLocation = CachedMesh->GetSocketLocation(BoneName_FrontRight);
+		FootOffset_FrontRight = CalculateFootOffset(RawFootLocation_FrontRight, BoneLocation);
+	}
+
+	// Back Left
+	if (TraceFootToGround(BoneName_BackLeft, HitLocation, HitNormal))
+	{
+		RawFootLocation_BackLeft = HitLocation + FVector(0, 0, FootHeight);
+		FVector BoneLocation = CachedMesh->GetSocketLocation(BoneName_BackLeft);
+		FootOffset_BackLeft = CalculateFootOffset(RawFootLocation_BackLeft, BoneLocation);
+	}
+
+	// Back Right
+	if (TraceFootToGround(BoneName_BackRight, HitLocation, HitNormal))
+	{
+		RawFootLocation_BackRight = HitLocation + FVector(0, 0, FootHeight);
+		FVector BoneLocation = CachedMesh->GetSocketLocation(BoneName_BackRight);
+		FootOffset_BackRight = CalculateFootOffset(RawFootLocation_BackRight, BoneLocation);
+	}
+
+	// Interpolate foot targets smoothly
+	IKFootTarget_FrontLeft = InterpFootTarget(IKFootTarget_FrontLeft, RawFootLocation_FrontLeft, DeltaSeconds);
+	IKFootTarget_FrontRight = InterpFootTarget(IKFootTarget_FrontRight, RawFootLocation_FrontRight, DeltaSeconds);
+	IKFootTarget_BackLeft = InterpFootTarget(IKFootTarget_BackLeft, RawFootLocation_BackLeft, DeltaSeconds);
+	IKFootTarget_BackRight = InterpFootTarget(IKFootTarget_BackRight, RawFootLocation_BackRight, DeltaSeconds);
+
+	// Calculate and interpolate pelvis offset
+	FVector TargetPelvisOffset = CalculatePelvisOffset();
+	PelvisOffset = FMath::VInterpTo(PelvisOffset, TargetPelvisOffset, DeltaSeconds, PelvisInterpSpeed);
+
+	// Blend in IK alphas
+	IKAlpha_FrontLeft = FMath::FInterpTo(IKAlpha_FrontLeft, TargetAlpha, DeltaSeconds, IKInterpSpeed);
+	IKAlpha_FrontRight = FMath::FInterpTo(IKAlpha_FrontRight, TargetAlpha, DeltaSeconds, IKInterpSpeed);
+	IKAlpha_BackLeft = FMath::FInterpTo(IKAlpha_BackLeft, TargetAlpha, DeltaSeconds, IKInterpSpeed);
+	IKAlpha_BackRight = FMath::FInterpTo(IKAlpha_BackRight, TargetAlpha, DeltaSeconds, IKInterpSpeed);
+	PelvisAlpha = FMath::FInterpTo(PelvisAlpha, TargetAlpha, DeltaSeconds, PelvisInterpSpeed);
+}
+
+bool USmartCatAnimInstance::TraceFootToGround(const FName& BoneName, FVector& OutHitLocation, FVector& OutHitNormal)
+{
+	if (!CachedMesh || !CatCharacter)
+	{
+		return false;
+	}
+
+	// Get bone location in world space
+	FVector BoneLocation = CachedMesh->GetSocketLocation(BoneName);
+
+	// Calculate trace start and end
+	FVector TraceStart = BoneLocation + FVector(0, 0, TraceStartOffset);
+	FVector TraceEnd = BoneLocation - FVector(0, 0, TraceEndOffset);
+
+	// Setup trace parameters
+	FCollisionQueryParams QueryParams;
+	QueryParams.AddIgnoredActor(CatCharacter);
+	QueryParams.bTraceComplex = false;
+	QueryParams.bReturnPhysicalMaterial = false;
+
+	FHitResult HitResult;
+	bool bHit = CatCharacter->GetWorld()->LineTraceSingleByChannel(
+		HitResult,
+		TraceStart,
+		TraceEnd,
+		TraceChannel,
+		QueryParams
+	);
+
+#if ENABLE_DRAW_DEBUG
+	if (bDrawDebugTraces)
+	{
+		DrawDebugLine(
+			CatCharacter->GetWorld(),
+			TraceStart,
+			TraceEnd,
+			bHit ? FColor::Green : FColor::Red,
+			false,
+			-1.0f,
+			0,
+			1.0f
+		);
+
+		if (bHit)
+		{
+			DrawDebugSphere(
+				CatCharacter->GetWorld(),
+				HitResult.ImpactPoint,
+				3.0f,
+				8,
+				FColor::Yellow,
+				false,
+				-1.0f
+			);
+		}
+	}
+#endif
+
+	if (bHit)
+	{
+		OutHitLocation = HitResult.ImpactPoint;
+		OutHitNormal = HitResult.ImpactNormal;
+		return true;
+	}
+
+	// No hit - foot is in the air
+	OutHitLocation = BoneLocation;
+	OutHitNormal = FVector::UpVector;
+	return false;
+}
+
+float USmartCatAnimInstance::CalculateFootOffset(const FVector& TraceHitLocation, const FVector& BoneWorldLocation)
+{
+	// Calculate the Z difference between where the foot should be and where it is
+	float Offset = TraceHitLocation.Z - BoneWorldLocation.Z;
+
+	// Clamp to maximum offset to prevent extreme stretching
+	return FMath::Clamp(Offset, -MaxIKOffset, MaxIKOffset);
+}
+
+FVector USmartCatAnimInstance::CalculatePelvisOffset()
+{
+	// Find the minimum (most negative) foot offset
+	// The pelvis needs to lower to accommodate the foot that needs to reach lowest
+	float MinOffset = FMath::Min(
+		FMath::Min(FootOffset_FrontLeft, FootOffset_FrontRight),
+		FMath::Min(FootOffset_BackLeft, FootOffset_BackRight)
+	);
+
+	// Only apply pelvis adjustment for negative offsets (lowering the body)
+	// When a foot needs to reach down, lower the pelvis
+	if (MinOffset < 0.0f)
+	{
+		return FVector(0.0f, 0.0f, MinOffset);
+	}
+
+	return FVector::ZeroVector;
+}
+
+FVector USmartCatAnimInstance::InterpFootTarget(const FVector& Current, const FVector& Target, float DeltaSeconds)
+{
+	return FMath::VInterpTo(Current, Target, DeltaSeconds, IKInterpSpeed);
+}
+
+bool USmartCatAnimInstance::ShouldEnableIK() const
+{
+	// Disable IK when falling/jumping
+	if (bIsFalling)
+	{
+		return false;
+	}
+
+	// Disable IK when moving too fast (running)
+	if (GroundSpeed > IKDisableSpeedThreshold)
+	{
+		return false;
+	}
+
+	return true;
 }

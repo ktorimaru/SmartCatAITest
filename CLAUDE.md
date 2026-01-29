@@ -38,3 +38,9 @@ Alternatively, build via the Xcode workspace: `SmartCatAITest (Mac).xcworkspace`
 - `Config/DefaultEngine.ini` — Renderer config (ray tracing, virtual shadow maps, substrate enabled), default map set to OpenWorld template
 - `Config/DefaultInput.ini` — Input bindings (Enhanced Input System)
 - Plugin descriptor: `Plugins/SmartCatAI/SmartCatAI.uplugin`
+
+## Documents
+
+See @docs/Bones.md for skeleton hierarchy and which bones are the paws
+
+See @docs/Product Description.md for a more detailed description of the goals and purpose of the plugin
