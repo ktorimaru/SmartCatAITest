@@ -19,6 +19,18 @@
 			]
 		},
 		{
+			"Name": "AIAssistant",
+			"Enabled": true
+		},
+		{
+			"Name": "Locomotor",
+			"Enabled": true
+		},
+		{
+			"Name": "AnimationLocomotionLibrary",
+			"Enabled": true
+		},
+		{
 			"Name": "ControlRig",
 			"Enabled": true
 		}
