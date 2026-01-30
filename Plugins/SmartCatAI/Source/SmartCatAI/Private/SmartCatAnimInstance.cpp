@@ -81,12 +81,12 @@ void USmartCatAnimInstance::UpdateIKTargets(float DeltaSeconds)
 
 	if (!bIKEnabled)
 	{
-		// Smoothly blend out IK
-		IKAlpha_FrontLeft = FMath::FInterpTo(IKAlpha_FrontLeft, 0.0f, DeltaSeconds, IKInterpSpeed);
-		IKAlpha_FrontRight = FMath::FInterpTo(IKAlpha_FrontRight, 0.0f, DeltaSeconds, IKInterpSpeed);
-		IKAlpha_BackLeft = FMath::FInterpTo(IKAlpha_BackLeft, 0.0f, DeltaSeconds, IKInterpSpeed);
-		IKAlpha_BackRight = FMath::FInterpTo(IKAlpha_BackRight, 0.0f, DeltaSeconds, IKInterpSpeed);
-		PelvisAlpha = FMath::FInterpTo(PelvisAlpha, 0.0f, DeltaSeconds, PelvisInterpSpeed);
+		// Immediately disable IK
+		IKAlpha_FrontLeft = 0.0f;
+		IKAlpha_FrontRight = 0.0f;
+		IKAlpha_BackLeft = 0.0f;
+		IKAlpha_BackRight = 0.0f;
+		PelvisAlpha = 0.0f;
 		return;
 	}
 
@@ -125,22 +125,21 @@ void USmartCatAnimInstance::UpdateIKTargets(float DeltaSeconds)
 		FootOffset_BackRight = CalculateFootOffset(RawFootLocation_BackRight, BoneLocation);
 	}
 
-	// Interpolate foot targets smoothly
-	IKFootTarget_FrontLeft = InterpFootTarget(IKFootTarget_FrontLeft, RawFootLocation_FrontLeft, DeltaSeconds);
-	IKFootTarget_FrontRight = InterpFootTarget(IKFootTarget_FrontRight, RawFootLocation_FrontRight, DeltaSeconds);
-	IKFootTarget_BackLeft = InterpFootTarget(IKFootTarget_BackLeft, RawFootLocation_BackLeft, DeltaSeconds);
-	IKFootTarget_BackRight = InterpFootTarget(IKFootTarget_BackRight, RawFootLocation_BackRight, DeltaSeconds);
+	// Set foot targets directly (no interpolation)
+	IKFootTarget_FrontLeft = RawFootLocation_FrontLeft;
+	IKFootTarget_FrontRight = RawFootLocation_FrontRight;
+	IKFootTarget_BackLeft = RawFootLocation_BackLeft;
+	IKFootTarget_BackRight = RawFootLocation_BackRight;
 
-	// Calculate and interpolate pelvis offset
-	FVector TargetPelvisOffset = CalculatePelvisOffset();
-	PelvisOffset = FMath::VInterpTo(PelvisOffset, TargetPelvisOffset, DeltaSeconds, PelvisInterpSpeed);
+	// Set pelvis offset directly (no interpolation)
+	PelvisOffset = CalculatePelvisOffset();
 
-	// Blend in IK alphas
-	IKAlpha_FrontLeft = FMath::FInterpTo(IKAlpha_FrontLeft, TargetAlpha, DeltaSeconds, IKInterpSpeed);
-	IKAlpha_FrontRight = FMath::FInterpTo(IKAlpha_FrontRight, TargetAlpha, DeltaSeconds, IKInterpSpeed);
-	IKAlpha_BackLeft = FMath::FInterpTo(IKAlpha_BackLeft, TargetAlpha, DeltaSeconds, IKInterpSpeed);
-	IKAlpha_BackRight = FMath::FInterpTo(IKAlpha_BackRight, TargetAlpha, DeltaSeconds, IKInterpSpeed);
-	PelvisAlpha = FMath::FInterpTo(PelvisAlpha, TargetAlpha, DeltaSeconds, PelvisInterpSpeed);
+	// Set IK alphas directly (no interpolation)
+	IKAlpha_FrontLeft = TargetAlpha;
+	IKAlpha_FrontRight = TargetAlpha;
+	IKAlpha_BackLeft = TargetAlpha;
+	IKAlpha_BackRight = TargetAlpha;
+	PelvisAlpha = TargetAlpha;
 }
 
 bool USmartCatAnimInstance::TraceFootToGround(const FName& BoneName, FVector& OutHitLocation, FVector& OutHitNormal)

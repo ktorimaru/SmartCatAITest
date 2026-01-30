@@ -40,6 +40,8 @@ public class SmartCatAI : ModuleRules
 				"SlateCore",
 				"ControlRig",
 				"RigVM",
+				"EnhancedInput",
+				"InputCore",
 			}
 			);
 		
