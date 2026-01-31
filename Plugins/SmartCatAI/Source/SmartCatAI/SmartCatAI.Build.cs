@@ -42,6 +42,7 @@ public class SmartCatAI : ModuleRules
 				"RigVM",
 				"EnhancedInput",
 				"InputCore",
+				"AnimationCore",
 			}
 			);
 		
