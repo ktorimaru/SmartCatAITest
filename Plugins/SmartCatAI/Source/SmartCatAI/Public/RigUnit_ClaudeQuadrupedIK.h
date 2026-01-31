@@ -7,6 +7,17 @@
 #include "RigUnit_ClaudeQuadrupedIK.generated.h"
 
 /**
+ * Gait type for quadruped locomotion
+ */
+UENUM(BlueprintType)
+enum class EClaudeQuadrupedGait : uint8
+{
+	Walk    UMETA(DisplayName = "Walk"),      // 4-beat gait, each foot independent
+	Trot    UMETA(DisplayName = "Trot"),      // 2-beat diagonal pairs
+	Gallop  UMETA(DisplayName = "Gallop"),    // Asymmetric bounding gait
+};
+
+/**
  * Configuration for a single leg in the quadruped IK system
  */
 USTRUCT(BlueprintType)
@@ -54,14 +65,26 @@ struct SMARTCATAI_API FClaudeQuadrupedLegOutput
 	/** The ground normal at the foot position */
 	UPROPERTY(EditAnywhere, meta = (Output))
 	FVector GroundNormal = FVector::UpVector;
+
+	/** Current step phase (0-1, 0=grounded, 0.5=max lift) */
+	UPROPERTY(EditAnywhere, meta = (Output))
+	float StepPhase = 0.0f;
+
+	/** Is this foot currently in swing phase (lifted) */
+	UPROPERTY(EditAnywhere, meta = (Output))
+	bool bIsSwinging = false;
 };
 
 /**
- * ClaudeQuadrupedIK - A Control Rig unit for procedural quadruped foot placement
+ * ClaudeQuadrupedIK - A Control Rig unit for procedural quadruped locomotion
  *
- * This node performs ground traces for all four legs of a quadruped character
- * and calculates IK targets, foot rotations, and pelvis adjustments for
- * realistic foot placement on uneven terrain.
+ * This node generates procedural walking/trotting/galloping animation for
+ * quadruped characters with automatic foot placement and terrain adaptation.
+ *
+ * Supports three gaits:
+ * - Walk: 4-beat lateral sequence gait
+ * - Trot: 2-beat diagonal gait
+ * - Gallop: Asymmetric bounding gait
  *
  * Created by Claude (Anthropic) for the SmartCatAI project.
  */
@@ -76,6 +99,13 @@ struct SMARTCATAI_API FRigUnit_ClaudeQuadrupedIK : public FRigUnitMutable
 		, MaxIKOffset(30.0f)
 		, FootHeight(2.0f)
 		, bEnabled(true)
+		, bProceduralGait(true)
+		, Gait(EClaudeQuadrupedGait::Walk)
+		, StrideLength(40.0f)
+		, StepHeight(15.0f)
+		, WalkSpeed(100.0f)
+		, TrotSpeed(250.0f)
+		, GallopSpeed(400.0f)
 		, bAlignFootToGround(true)
 		, MaxFootAngle(45.0f)
 		, bDebugDraw(false)
@@ -86,12 +116,24 @@ struct SMARTCATAI_API FRigUnit_ClaudeQuadrupedIK : public FRigUnitMutable
 	virtual void Execute() override;
 
 	// ============================================
-	// Inputs
+	// Inputs - Character State
 	// ============================================
 
 	/** The component transform (character world transform) */
 	UPROPERTY(EditAnywhere, meta = (Input))
 	FTransform ComponentTransform;
+
+	/** Character velocity in world space */
+	UPROPERTY(EditAnywhere, meta = (Input))
+	FVector Velocity = FVector::ZeroVector;
+
+	/** Delta time for animation */
+	UPROPERTY(EditAnywhere, meta = (Input))
+	float DeltaTime = 0.0f;
+
+	// ============================================
+	// Inputs - Leg Configuration
+	// ============================================
 
 	/** Configuration for front left leg */
 	UPROPERTY(EditAnywhere, meta = (Input))
@@ -113,6 +155,10 @@ struct SMARTCATAI_API FRigUnit_ClaudeQuadrupedIK : public FRigUnitMutable
 	UPROPERTY(EditAnywhere, meta = (Input))
 	FRigElementKey PelvisBone;
 
+	// ============================================
+	// Inputs - Ground Adaptation
+	// ============================================
+
 	/** How far above the foot bone to start the trace */
 	UPROPERTY(EditAnywhere, meta = (Input))
 	float TraceStartOffset;
@@ -129,9 +175,45 @@ struct SMARTCATAI_API FRigUnit_ClaudeQuadrupedIK : public FRigUnitMutable
 	UPROPERTY(EditAnywhere, meta = (Input))
 	float FootHeight;
 
+	// ============================================
+	// Inputs - Gait Control
+	// ============================================
+
 	/** Whether the IK system is enabled */
 	UPROPERTY(EditAnywhere, meta = (Input))
 	bool bEnabled;
+
+	/** Enable procedural gait generation (vs just ground adaptation) */
+	UPROPERTY(EditAnywhere, meta = (Input))
+	bool bProceduralGait;
+
+	/** Current gait type */
+	UPROPERTY(EditAnywhere, meta = (Input))
+	EClaudeQuadrupedGait Gait;
+
+	/** Distance covered per full step cycle */
+	UPROPERTY(EditAnywhere, meta = (Input))
+	float StrideLength;
+
+	/** Maximum height of foot lift during swing phase */
+	UPROPERTY(EditAnywhere, meta = (Input))
+	float StepHeight;
+
+	/** Speed threshold for walk gait */
+	UPROPERTY(EditAnywhere, meta = (Input))
+	float WalkSpeed;
+
+	/** Speed threshold for trot gait */
+	UPROPERTY(EditAnywhere, meta = (Input))
+	float TrotSpeed;
+
+	/** Speed threshold for gallop gait */
+	UPROPERTY(EditAnywhere, meta = (Input))
+	float GallopSpeed;
+
+	// ============================================
+	// Inputs - Foot Alignment
+	// ============================================
 
 	/** Whether to rotate feet to align with ground normal */
 	UPROPERTY(EditAnywhere, meta = (Input))
@@ -176,4 +258,16 @@ struct SMARTCATAI_API FRigUnit_ClaudeQuadrupedIK : public FRigUnitMutable
 	/** Overall IK alpha (0 when disabled) */
 	UPROPERTY(EditAnywhere, meta = (Output))
 	float MasterAlpha;
+
+	/** Current detected gait based on speed */
+	UPROPERTY(EditAnywhere, meta = (Output))
+	EClaudeQuadrupedGait DetectedGait;
+
+	/** Accumulated gait cycle phase (0-1) */
+	UPROPERTY(EditAnywhere, meta = (Output))
+	float GaitCyclePhase;
+
+	/** Internal accumulated phase for gait cycle (persists between frames) */
+	UPROPERTY(Transient, meta = (Input, Output))
+	float AccumulatedPhase = 0.0f;
 };
