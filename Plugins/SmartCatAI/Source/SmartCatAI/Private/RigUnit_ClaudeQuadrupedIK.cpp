@@ -29,6 +29,7 @@ FRigUnit_ClaudeQuadrupedIK_Execute()
 
 	// Calculate speed and detect gait
 	const float Speed = Velocity.Size2D();
+	DebugSpeed = Speed;
 
 	// Auto-detect gait based on speed
 	if (Speed < WalkSpeed * 0.5f)
@@ -53,15 +54,17 @@ FRigUnit_ClaudeQuadrupedIK_Execute()
 
 	// Calculate gait cycle progression
 	float StepsPerSecond = 0.0f;
-	if (StrideLength > 0.0f && Speed > 1.0f)
+	if (StrideLength > 0.0f && Speed > 0.1f)
 	{
 		StepsPerSecond = Speed / StrideLength;
 	}
+	DebugStepsPerSecond = StepsPerSecond;
 
 	// Accumulate phase
-	if (bProceduralGait && Speed > 1.0f)
+	if (bProceduralGait && Speed > 0.1f)
 	{
-		AccumulatedPhase += StepsPerSecond * DeltaTime;
+		float EffectiveMultiplier = FMath::Max(GaitSpeedMultiplier, 0.1f);
+		AccumulatedPhase += StepsPerSecond * DeltaTime * EffectiveMultiplier;
 		AccumulatedPhase = FMath::Fmod(AccumulatedPhase, 1.0f);
 	}
 	GaitCyclePhase = AccumulatedPhase;
@@ -187,7 +190,7 @@ FRigUnit_ClaudeQuadrupedIK_Execute()
 
 			// Add procedural gait lift
 			float LiftHeight = 0.0f;
-			if (bProceduralGait && Speed > 1.0f)
+			if (bProceduralGait && Speed > 0.1f)
 			{
 				LiftHeight = CalculateStepCurve(LegPhase, SwingDuration) * StepHeight;
 
@@ -201,14 +204,27 @@ FRigUnit_ClaudeQuadrupedIK_Execute()
 
 			// Calculate forward/backward offset based on swing phase
 			FVector SwingOffset = FVector::ZeroVector;
-			if (bProceduralGait && Speed > 1.0f && Output.bIsSwinging)
+			if (bProceduralGait && Speed > 0.1f)
 			{
-				// Move foot forward during swing
 				FVector MoveDirection = Velocity.GetSafeNormal2D();
 				float SwingProgress = LegPhase / SwingDuration;
-				// Foot moves from back to front during swing
-				float ForwardOffset = FMath::Lerp(-StrideLength * 0.3f, StrideLength * 0.3f, SwingProgress);
-				SwingOffset = MoveDirection * ForwardOffset;
+
+				// Use full stride length (don't scale by speed - GaitSpeedMultiplier handles timing)
+				float HalfStride = StrideLength * 0.5f;
+
+				if (Output.bIsSwinging)
+				{
+					// Swing phase: foot moves from back to front
+					float ForwardOffset = FMath::Lerp(-HalfStride, HalfStride, SwingProgress);
+					SwingOffset = MoveDirection * ForwardOffset;
+				}
+				else
+				{
+					// Stance phase: foot stays planted, slides back relative to body motion
+					float StanceProgress = (LegPhase - SwingDuration) / (1.0f - SwingDuration);
+					float BackwardOffset = FMath::Lerp(HalfStride, -HalfStride, StanceProgress);
+					SwingOffset = MoveDirection * BackwardOffset;
+				}
 			}
 
 			// Final IK target
@@ -282,7 +298,7 @@ FRigUnit_ClaudeQuadrupedIK_Execute()
 		}
 
 		// Add vertical bob for gallop
-		if (bProceduralGait && ActiveGait == EClaudeQuadrupedGait::Gallop && Speed > 1.0f)
+		if (bProceduralGait && ActiveGait == EClaudeQuadrupedGait::Gallop && Speed > 0.1f)
 		{
 			// Suspension phase bob
 			float BobPhase = FMath::Fmod(AccumulatedPhase * 2.0f, 1.0f);

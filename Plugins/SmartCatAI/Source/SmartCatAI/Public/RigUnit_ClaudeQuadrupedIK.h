@@ -211,6 +211,10 @@ struct SMARTCATAI_API FRigUnit_ClaudeQuadrupedIK : public FRigUnitMutable
 	UPROPERTY(EditAnywhere, meta = (Input))
 	float GallopSpeed;
 
+	/** Multiplier for gait speed (use >1 to speed up cycle for testing) */
+	UPROPERTY(EditAnywhere, meta = (Input))
+	float GaitSpeedMultiplier = 1.0f;
+
 	// ============================================
 	// Inputs - Foot Alignment
 	// ============================================
@@ -266,6 +270,14 @@ struct SMARTCATAI_API FRigUnit_ClaudeQuadrupedIK : public FRigUnitMutable
 	/** Accumulated gait cycle phase (0-1) */
 	UPROPERTY(EditAnywhere, meta = (Output))
 	float GaitCyclePhase;
+
+	/** Debug: Current horizontal speed (Velocity.Size2D) */
+	UPROPERTY(EditAnywhere, meta = (Output))
+	float DebugSpeed = 0.0f;
+
+	/** Debug: Steps per second calculation */
+	UPROPERTY(EditAnywhere, meta = (Output))
+	float DebugStepsPerSecond = 0.0f;
 
 	/** Internal accumulated phase for gait cycle (persists between frames) */
 	UPROPERTY(Transient, meta = (Input, Output))
