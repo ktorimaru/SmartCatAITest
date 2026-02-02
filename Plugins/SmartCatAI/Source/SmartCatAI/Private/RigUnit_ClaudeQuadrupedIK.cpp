@@ -49,8 +49,8 @@ FRigUnit_ClaudeQuadrupedIK_Execute()
 		DetectedGait = EClaudeQuadrupedGait::Gallop;
 	}
 
-	// Use manual gait override if set, otherwise use detected
-	const EClaudeQuadrupedGait ActiveGait = Gait;
+	// Use detected gait if auto-switch enabled, otherwise use manual setting
+	const EClaudeQuadrupedGait ActiveGait = bAutoGait ? DetectedGait : Gait;
 
 	// Calculate gait cycle progression
 	float StepsPerSecond = 0.0f;

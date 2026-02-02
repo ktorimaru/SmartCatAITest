@@ -187,9 +187,13 @@ struct SMARTCATAI_API FRigUnit_ClaudeQuadrupedIK : public FRigUnitMutable
 	UPROPERTY(EditAnywhere, meta = (Input))
 	bool bProceduralGait;
 
-	/** Current gait type */
+	/** Current gait type (manual override, ignored if bAutoGait is true) */
 	UPROPERTY(EditAnywhere, meta = (Input))
 	EClaudeQuadrupedGait Gait;
+
+	/** Automatically switch gait based on speed thresholds */
+	UPROPERTY(EditAnywhere, meta = (Input))
+	bool bAutoGait = true;
 
 	/** Distance covered per full step cycle */
 	UPROPERTY(EditAnywhere, meta = (Input))
