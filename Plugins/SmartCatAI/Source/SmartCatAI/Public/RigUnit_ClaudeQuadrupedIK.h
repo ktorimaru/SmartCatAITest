@@ -12,6 +12,7 @@
 UENUM(BlueprintType)
 enum class EClaudeQuadrupedGait : uint8
 {
+	Stroll  UMETA(DisplayName = "Stroll"),    // Slow 4-beat gait, relaxed
 	Walk    UMETA(DisplayName = "Walk"),      // 4-beat gait, each foot independent
 	Trot    UMETA(DisplayName = "Trot"),      // 2-beat diagonal pairs
 	Gallop  UMETA(DisplayName = "Gallop"),    // Asymmetric bounding gait
@@ -103,9 +104,10 @@ struct SMARTCATAI_API FRigUnit_ClaudeQuadrupedIK : public FRigUnitMutable
 		, Gait(EClaudeQuadrupedGait::Walk)
 		, StrideLength(40.0f)
 		, StepHeight(15.0f)
-		, WalkSpeed(100.0f)
-		, TrotSpeed(250.0f)
-		, GallopSpeed(400.0f)
+		, StrollSpeed(75.0f)
+		, WalkSpeed(110.0f)
+		, TrotSpeed(145.0f)
+		, GallopSpeed(145.0f)
 		, bAlignFootToGround(true)
 		, MaxFootAngle(45.0f)
 		, bDebugDraw(false)
@@ -155,6 +157,14 @@ struct SMARTCATAI_API FRigUnit_ClaudeQuadrupedIK : public FRigUnitMutable
 	UPROPERTY(EditAnywhere, meta = (Input))
 	FRigElementKey PelvisBone;
 
+	/** Clavicle bone (front shoulder) for body length calculation */
+	UPROPERTY(EditAnywhere, meta = (Input))
+	FRigElementKey ClavicleBone;
+
+	/** Thigh bone (rear hip) for body length calculation */
+	UPROPERTY(EditAnywhere, meta = (Input))
+	FRigElementKey ThighBone;
+
 	// ============================================
 	// Inputs - Ground Adaptation
 	// ============================================
@@ -203,15 +213,19 @@ struct SMARTCATAI_API FRigUnit_ClaudeQuadrupedIK : public FRigUnitMutable
 	UPROPERTY(EditAnywhere, meta = (Input))
 	float StepHeight;
 
-	/** Speed threshold for walk gait */
+	/** Speed threshold: below this is Stroll */
+	UPROPERTY(EditAnywhere, meta = (Input))
+	float StrollSpeed;
+
+	/** Speed threshold: above StrollSpeed, below this is Walk */
 	UPROPERTY(EditAnywhere, meta = (Input))
 	float WalkSpeed;
 
-	/** Speed threshold for trot gait */
+	/** Speed threshold: above WalkSpeed, below this is Trot */
 	UPROPERTY(EditAnywhere, meta = (Input))
 	float TrotSpeed;
 
-	/** Speed threshold for gallop gait */
+	/** Speed threshold: above TrotSpeed is Gallop */
 	UPROPERTY(EditAnywhere, meta = (Input))
 	float GallopSpeed;
 
@@ -282,6 +296,10 @@ struct SMARTCATAI_API FRigUnit_ClaudeQuadrupedIK : public FRigUnitMutable
 	/** Debug: Steps per second calculation */
 	UPROPERTY(EditAnywhere, meta = (Output))
 	float DebugStepsPerSecond = 0.0f;
+
+	/** Debug: Distance from Clavicle to Thigh (body length) */
+	UPROPERTY(EditAnywhere, meta = (Output))
+	float DebugBodyLength = 0.0f;
 
 	/** Internal accumulated phase for gait cycle (persists between frames) */
 	UPROPERTY(Transient, meta = (Input, Output))

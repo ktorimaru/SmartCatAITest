@@ -27,20 +27,29 @@ FRigUnit_ClaudeQuadrupedIK_Execute()
 		return;
 	}
 
+	// Calculate body length (Clavicle to Thigh distance)
+	if (ClavicleBone.IsValid() && ThighBone.IsValid())
+	{
+		const FVector ClaviclePos = Hierarchy->GetGlobalTransform(ClavicleBone).GetLocation();
+		const FVector ThighPos = Hierarchy->GetGlobalTransform(ThighBone).GetLocation();
+		DebugBodyLength = FVector::Dist(ClaviclePos, ThighPos);
+	}
+
 	// Calculate speed and detect gait
 	const float Speed = Velocity.Size2D();
 	DebugSpeed = Speed;
 
-	// Auto-detect gait based on speed
-	if (Speed < WalkSpeed * 0.5f)
+	// Auto-detect gait based on speed thresholds
+	// Stroll: 0-75, Walk: 75-110, Trot: 110-145, Gallop: >145
+	if (Speed < StrollSpeed)
+	{
+		DetectedGait = EClaudeQuadrupedGait::Stroll;
+	}
+	else if (Speed < WalkSpeed)
 	{
 		DetectedGait = EClaudeQuadrupedGait::Walk;
 	}
 	else if (Speed < TrotSpeed)
-	{
-		DetectedGait = EClaudeQuadrupedGait::Walk;
-	}
-	else if (Speed < GallopSpeed)
 	{
 		DetectedGait = EClaudeQuadrupedGait::Trot;
 	}
@@ -78,6 +87,14 @@ FRigUnit_ClaudeQuadrupedIK_Execute()
 
 	switch (ActiveGait)
 	{
+	case EClaudeQuadrupedGait::Stroll:
+		// Slow 4-beat gait, same pattern as walk but more relaxed timing
+		PhaseOffset_FL = 0.25f;  // Front Left
+		PhaseOffset_FR = 0.75f;  // Front Right
+		PhaseOffset_BL = 0.0f;   // Back Left
+		PhaseOffset_BR = 0.5f;   // Back Right
+		break;
+
 	case EClaudeQuadrupedGait::Walk:
 		// 4-beat lateral sequence: LH(0) -> LF(0.25) -> RH(0.5) -> RF(0.75)
 		// This creates the classic walking pattern
@@ -125,6 +142,9 @@ FRigUnit_ClaudeQuadrupedIK_Execute()
 	float SwingDuration = 0.25f; // Default for walk
 	switch (ActiveGait)
 	{
+	case EClaudeQuadrupedGait::Stroll:
+		SwingDuration = 0.2f;  // Shorter swing, more time on ground
+		break;
 	case EClaudeQuadrupedGait::Walk:
 		SwingDuration = 0.25f;
 		break;
