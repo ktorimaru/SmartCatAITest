@@ -79,6 +79,18 @@ void ASmartCatAICharacter::SetupPlayerInputComponent(UInputComponent* PlayerInpu
 		{
 			EnhancedInputComponent->BindAction(LookAction, ETriggerEvent::Triggered, this, &ASmartCatAICharacter::Look);
 		}
+
+		// Speed Up
+		if (SpeedUpAction)
+		{
+			EnhancedInputComponent->BindAction(SpeedUpAction, ETriggerEvent::Started, this, &ASmartCatAICharacter::SpeedUp);
+		}
+
+		// Speed Down
+		if (SpeedDownAction)
+		{
+			EnhancedInputComponent->BindAction(SpeedDownAction, ETriggerEvent::Started, this, &ASmartCatAICharacter::SpeedDown);
+		}
 	}
 }
 
@@ -112,6 +124,26 @@ void ASmartCatAICharacter::Look(const FInputActionValue& Value)
 		// Add yaw and pitch input to controller
 		AddControllerYawInput(LookAxisVector.X);
 		AddControllerPitchInput(LookAxisVector.Y);
+	}
+}
+
+void ASmartCatAICharacter::SpeedUp(const FInputActionValue& Value)
+{
+	if (UCharacterMovementComponent* Movement = GetCharacterMovement())
+	{
+		float NewSpeed = FMath::Clamp(Movement->MaxWalkSpeed + SpeedAdjustAmount, MinWalkSpeed, MaxWalkSpeed);
+		Movement->MaxWalkSpeed = NewSpeed;
+		UE_LOG(LogTemp, Log, TEXT("Walk Speed: %.0f"), NewSpeed);
+	}
+}
+
+void ASmartCatAICharacter::SpeedDown(const FInputActionValue& Value)
+{
+	if (UCharacterMovementComponent* Movement = GetCharacterMovement())
+	{
+		float NewSpeed = FMath::Clamp(Movement->MaxWalkSpeed - SpeedAdjustAmount, MinWalkSpeed, MaxWalkSpeed);
+		Movement->MaxWalkSpeed = NewSpeed;
+		UE_LOG(LogTemp, Log, TEXT("Walk Speed: %.0f"), NewSpeed);
 	}
 }
 

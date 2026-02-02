@@ -55,10 +55,40 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SmartCatAI|Input")
 	TObjectPtr<UInputAction> LookAction;
 
+	/** Speed Up Input Action */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SmartCatAI|Input")
+	TObjectPtr<UInputAction> SpeedUpAction;
+
+	/** Speed Down Input Action */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SmartCatAI|Input")
+	TObjectPtr<UInputAction> SpeedDownAction;
+
+	// ============================================
+	// Speed Control
+	// ============================================
+
+	/** Amount to change speed per key press */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SmartCatAI|Movement")
+	float SpeedAdjustAmount = 50.0f;
+
+	/** Minimum walk speed */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SmartCatAI|Movement")
+	float MinWalkSpeed = 50.0f;
+
+	/** Maximum walk speed */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SmartCatAI|Movement")
+	float MaxWalkSpeed = 800.0f;
+
 private:
 	/** Called for movement input */
 	void Move(const FInputActionValue& Value);
 
 	/** Called for look input */
 	void Look(const FInputActionValue& Value);
+
+	/** Called for speed up input */
+	void SpeedUp(const FInputActionValue& Value);
+
+	/** Called for speed down input */
+	void SpeedDown(const FInputActionValue& Value);
 };
