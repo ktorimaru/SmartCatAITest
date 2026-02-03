@@ -28,11 +28,20 @@ FRigUnit_ClaudeQuadrupedIK_Execute()
 	}
 
 	// Calculate body length (Clavicle to Thigh distance)
+	DebugBodyLength = 0.0f;
 	if (ClavicleBone.IsValid() && ThighBone.IsValid())
 	{
+		const FRigElementKey ClavicleKey = Hierarchy->GetFirstParent(ClavicleBone);
+		const FRigElementKey ThighKey = Hierarchy->GetFirstParent(ThighBone);
+
 		const FVector ClaviclePos = Hierarchy->GetGlobalTransform(ClavicleBone).GetLocation();
 		const FVector ThighPos = Hierarchy->GetGlobalTransform(ThighBone).GetLocation();
 		DebugBodyLength = FVector::Dist(ClaviclePos, ThighPos);
+	}
+	else if (ClavicleBone.IsValid() || ThighBone.IsValid())
+	{
+		// One bone is set but not the other - output -1 as indicator
+		DebugBodyLength = -1.0f;
 	}
 
 	// Calculate speed and detect gait
@@ -179,7 +188,7 @@ FRigUnit_ClaudeQuadrupedIK_Execute()
 		// Calculate ground position (simple ground plane)
 		const float GroundZ = ComponentTransform.GetLocation().Z;
 
-		// Calculate trace intersection
+		// Trace from foot position to find ground
 		const FVector TraceStart = FootLocation + FVector(0.0f, 0.0f, TraceStartOffset);
 		const FVector TraceEnd = FootLocation - FVector(0.0f, 0.0f, TraceEndOffset);
 
@@ -226,15 +235,16 @@ FRigUnit_ClaudeQuadrupedIK_Execute()
 			FVector SwingOffset = FVector::ZeroVector;
 			if (bProceduralGait && Speed > 0.1f)
 			{
+				// Use velocity direction for movement
 				FVector MoveDirection = Velocity.GetSafeNormal2D();
-				float SwingProgress = LegPhase / SwingDuration;
 
-				// Use full stride length (don't scale by speed - GaitSpeedMultiplier handles timing)
+				// Use full stride length
 				float HalfStride = StrideLength * 0.5f;
 
 				if (Output.bIsSwinging)
 				{
 					// Swing phase: foot moves from back to front
+					float SwingProgress = LegPhase / SwingDuration;
 					float ForwardOffset = FMath::Lerp(-HalfStride, HalfStride, SwingProgress);
 					SwingOffset = MoveDirection * ForwardOffset;
 				}

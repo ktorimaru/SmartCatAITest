@@ -2,6 +2,7 @@
 
 #include "SmartCatAnimInstance.h"
 #include "SmartCatAICharacter.h"
+#include "QuadrupedGaitCalculator.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "DrawDebugHelpers.h"
@@ -46,6 +47,7 @@ void USmartCatAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 	}
 
 	UpdateMovementState(DeltaSeconds);
+	UpdateGait(DeltaSeconds);
 	UpdateIKTargets(DeltaSeconds);
 }
 
@@ -59,6 +61,13 @@ void USmartCatAnimInstance::UpdateMovementState(float DeltaSeconds)
 	{
 		bIsFalling = Movement->IsFalling();
 	}
+}
+
+void USmartCatAnimInstance::UpdateGait(float DeltaSeconds)
+{
+	// Update gait state using the shared calculator
+	UQuadrupedGaitCalculator::UpdateGaitState(GaitState, GaitConfig, Velocity, DeltaSeconds);
+	CurrentGait = GaitState.DetectedGait;
 }
 
 void USmartCatAnimInstance::UpdateIKTargets(float DeltaSeconds)
@@ -89,6 +98,15 @@ void USmartCatAnimInstance::UpdateIKTargets(float DeltaSeconds)
 		PelvisAlpha = 0.0f;
 		return;
 	}
+
+	// Get movement direction for gait calculation
+	FVector MoveDirection = Velocity.GetSafeNormal2D();
+
+	// Calculate gait outputs for each leg
+	FQuadrupedLegGaitOutput GaitFL = UQuadrupedGaitCalculator::CalculateFrontLeftLeg(GaitState, GaitConfig, MoveDirection);
+	FQuadrupedLegGaitOutput GaitFR = UQuadrupedGaitCalculator::CalculateFrontRightLeg(GaitState, GaitConfig, MoveDirection);
+	FQuadrupedLegGaitOutput GaitBL = UQuadrupedGaitCalculator::CalculateBackLeftLeg(GaitState, GaitConfig, MoveDirection);
+	FQuadrupedLegGaitOutput GaitBR = UQuadrupedGaitCalculator::CalculateBackRightLeg(GaitState, GaitConfig, MoveDirection);
 
 	// Perform traces for each foot
 	FVector HitLocation, HitNormal;
@@ -125,11 +143,11 @@ void USmartCatAnimInstance::UpdateIKTargets(float DeltaSeconds)
 		FootOffset_BackRight = CalculateFootOffset(RawFootLocation_BackRight, BoneLocation);
 	}
 
-	// Set foot targets directly (no interpolation)
-	IKFootTarget_FrontLeft = RawFootLocation_FrontLeft;
-	IKFootTarget_FrontRight = RawFootLocation_FrontRight;
-	IKFootTarget_BackLeft = RawFootLocation_BackLeft;
-	IKFootTarget_BackRight = RawFootLocation_BackRight;
+	// Apply gait offsets to foot targets
+	IKFootTarget_FrontLeft = RawFootLocation_FrontLeft + GaitFL.PositionOffset;
+	IKFootTarget_FrontRight = RawFootLocation_FrontRight + GaitFR.PositionOffset;
+	IKFootTarget_BackLeft = RawFootLocation_BackLeft + GaitBL.PositionOffset;
+	IKFootTarget_BackRight = RawFootLocation_BackRight + GaitBR.PositionOffset;
 
 	// Set pelvis offset directly (no interpolation)
 	PelvisOffset = CalculatePelvisOffset();

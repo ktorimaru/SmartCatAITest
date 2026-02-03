@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "Animation/AnimInstance.h"
+#include "QuadrupedGaitCalculator.h"
 #include "SmartCatAnimInstance.generated.h"
 
 class ASmartCatAICharacter;
@@ -132,9 +133,26 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SmartCatAI|IK|Debug")
 	bool bDrawDebugTraces = false;
 
+	// ============================================
+	// Gait Configuration
+	// ============================================
+
+	/** Gait configuration for procedural animation */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SmartCatAI|Gait")
+	FQuadrupedGaitConfig GaitConfig;
+
+	/** Current gait state (read-only, updated automatically) */
+	UPROPERTY(BlueprintReadOnly, Category = "SmartCatAI|Gait")
+	FQuadrupedGaitState GaitState;
+
+	/** Current detected gait for display */
+	UPROPERTY(BlueprintReadOnly, Category = "SmartCatAI|Gait")
+	EQuadrupedGait CurrentGait;
+
 protected:
 	void UpdateMovementState(float DeltaSeconds);
 	void UpdateIKTargets(float DeltaSeconds);
+	void UpdateGait(float DeltaSeconds);
 
 private:
 	/** Perform a single foot trace and return the hit location */
