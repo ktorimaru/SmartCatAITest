@@ -129,39 +129,89 @@ FQuadrupedLegGaitOutput UQuadrupedGaitCalculator::CalculateLegOutput(
 	Output.StepPhase = LegPhase;
 	Output.bIsSwinging = (LegPhase < SwingDuration);
 
+	// Default rotation - toe points in movement direction
+	FVector SafeMoveDir = MoveDirection.IsNearlyZero() ? FVector::ForwardVector : MoveDirection;
+	Output.EffectorRotation = SafeMoveDir.Rotation();
+
 	if (!Config.bProceduralGait || Speed <= 0.1f)
 	{
+		Output.EffectorTransform = FTransform(Output.EffectorRotation.Quaternion(), Output.PositionOffset);
 		return Output;
-	}
-
-	// Calculate lift height
-	Output.LiftHeight = CalculateStepCurve(LegPhase, SwingDuration) * Config.StepHeight;
-
-	// Scale lift height for gallop
-	if (ActiveGait == EQuadrupedGait::Gallop)
-	{
-		float SpeedFactor = FMath::Clamp(Speed / Config.GallopSpeed, 0.5f, 1.5f);
-		Output.LiftHeight *= SpeedFactor;
 	}
 
 	// Calculate stride offset (forward/backward)
 	float HalfStride = Config.StrideLength * 0.5f;
+	float SwingProgress = 0.0f;
 
 	if (Output.bIsSwinging)
 	{
 		// Swing phase: foot moves from back to front
-		float SwingProgress = LegPhase / SwingDuration;
+		SwingProgress = LegPhase / SwingDuration;
+		Output.SwingProgress = SwingProgress;
 		Output.StrideOffset = FMath::Lerp(-HalfStride, HalfStride, SwingProgress);
 	}
 	else
 	{
 		// Stance phase: foot slides back
 		float StanceProgress = (LegPhase - SwingDuration) / (1.0f - SwingDuration);
+		Output.SwingProgress = 0.0f;
 		Output.StrideOffset = FMath::Lerp(HalfStride, -HalfStride, StanceProgress);
 	}
 
+	// Calculate lift height with improved curve
+	// Foot lifts during first half of swing, comes back down during second half
+	if (Output.bIsSwinging)
+	{
+		// Use a curve that lifts and returns to ground
+		// Peak at 50% of swing, back to ground by 100%
+		float LiftCurve = FMath::Sin(SwingProgress * PI);
+		Output.LiftHeight = LiftCurve * Config.StepHeight;
+
+		// Scale lift height for gallop
+		if (ActiveGait == EQuadrupedGait::Gallop)
+		{
+			float SpeedFactor = FMath::Clamp(Speed / Config.GallopSpeed, 0.5f, 1.5f);
+			Output.LiftHeight *= SpeedFactor;
+		}
+	}
+	else
+	{
+		Output.LiftHeight = 0.0f;
+	}
+
+	// Calculate toe pitch based on swing phase
+	// During swing: pitch up at start, level at peak, pitch down at end (reaching for ground)
+	float ToePitch = 0.0f;
+	if (Output.bIsSwinging)
+	{
+		// First half of swing: toe pitches up (lifting)
+		// Second half of swing: toe pitches down (reaching for ground)
+		if (SwingProgress < 0.5f)
+		{
+			// Lifting: pitch up (negative pitch = toe up)
+			ToePitch = FMath::Lerp(0.0f, -20.0f, SwingProgress * 2.0f);
+		}
+		else
+		{
+			// Lowering: pitch down (positive pitch = toe down, reaching)
+			float LowerProgress = (SwingProgress - 0.5f) * 2.0f;
+			ToePitch = FMath::Lerp(-20.0f, 15.0f, LowerProgress);
+		}
+	}
+	else
+	{
+		// Stance phase: toe flat on ground
+		ToePitch = 0.0f;
+	}
+
+	// Build rotation: yaw from movement direction, pitch from swing phase
+	Output.EffectorRotation = FRotator(ToePitch, SafeMoveDir.Rotation().Yaw, 0.0f);
+
 	// Build final position offset
 	Output.PositionOffset = MoveDirection * Output.StrideOffset + FVector(0.0f, 0.0f, Output.LiftHeight);
+
+	// Build full effector transform
+	Output.EffectorTransform = FTransform(Output.EffectorRotation.Quaternion(), Output.PositionOffset);
 
 	return Output;
 }

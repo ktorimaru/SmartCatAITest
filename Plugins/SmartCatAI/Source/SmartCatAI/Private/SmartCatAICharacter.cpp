@@ -91,6 +91,52 @@ void ASmartCatAICharacter::SetupPlayerInputComponent(UInputComponent* PlayerInpu
 		{
 			EnhancedInputComponent->BindAction(SpeedDownAction, ETriggerEvent::Started, this, &ASmartCatAICharacter::SpeedDown);
 		}
+
+		// Animation Actions
+		if (FlipAction)
+		{
+			EnhancedInputComponent->BindAction(FlipAction, ETriggerEvent::Started, this, &ASmartCatAICharacter::OnFlip);
+		}
+		if (AttackAction)
+		{
+			EnhancedInputComponent->BindAction(AttackAction, ETriggerEvent::Started, this, &ASmartCatAICharacter::OnAttack);
+		}
+		if (HearAction)
+		{
+			EnhancedInputComponent->BindAction(HearAction, ETriggerEvent::Started, this, &ASmartCatAICharacter::OnHear);
+		}
+		if (FocusAction)
+		{
+			EnhancedInputComponent->BindAction(FocusAction, ETriggerEvent::Started, this, &ASmartCatAICharacter::OnFocus);
+		}
+		if (LayDownAction)
+		{
+			EnhancedInputComponent->BindAction(LayDownAction, ETriggerEvent::Started, this, &ASmartCatAICharacter::OnLayDown);
+		}
+		if (SitAction)
+		{
+			EnhancedInputComponent->BindAction(SitAction, ETriggerEvent::Started, this, &ASmartCatAICharacter::OnSit);
+		}
+		if (SleepAction)
+		{
+			EnhancedInputComponent->BindAction(SleepAction, ETriggerEvent::Started, this, &ASmartCatAICharacter::OnSleep);
+		}
+		if (JumpAction)
+		{
+			EnhancedInputComponent->BindAction(JumpAction, ETriggerEvent::Started, this, &ASmartCatAICharacter::OnJump);
+		}
+		if (LickAction)
+		{
+			EnhancedInputComponent->BindAction(LickAction, ETriggerEvent::Started, this, &ASmartCatAICharacter::OnLick);
+		}
+		if (MeowAction)
+		{
+			EnhancedInputComponent->BindAction(MeowAction, ETriggerEvent::Started, this, &ASmartCatAICharacter::OnMeow);
+		}
+		if (StretchAction)
+		{
+			EnhancedInputComponent->BindAction(StretchAction, ETriggerEvent::Started, this, &ASmartCatAICharacter::OnStretch);
+		}
 	}
 }
 
@@ -145,6 +191,74 @@ void ASmartCatAICharacter::SpeedDown(const FInputActionValue& Value)
 		Movement->MaxWalkSpeed = NewSpeed;
 		UE_LOG(LogTemp, Log, TEXT("Walk Speed: %.0f"), NewSpeed);
 	}
+}
+
+void ASmartCatAICharacter::TriggerAnimationAction(ECatAnimationAction Action)
+{
+	if (USkeletalMeshComponent* MeshComp = GetMesh())
+	{
+		if (USmartCatAnimInstance* AnimInst = Cast<USmartCatAnimInstance>(MeshComp->GetAnimInstance()))
+		{
+			AnimInst->TriggerAction(Action);
+		}
+	}
+}
+
+void ASmartCatAICharacter::OnFlip(const FInputActionValue& Value)
+{
+	TriggerAnimationAction(ECatAnimationAction::Flip);
+}
+
+void ASmartCatAICharacter::OnAttack(const FInputActionValue& Value)
+{
+	TriggerAnimationAction(ECatAnimationAction::Attack);
+}
+
+void ASmartCatAICharacter::OnHear(const FInputActionValue& Value)
+{
+	TriggerAnimationAction(ECatAnimationAction::Hear);
+}
+
+void ASmartCatAICharacter::OnFocus(const FInputActionValue& Value)
+{
+	TriggerAnimationAction(ECatAnimationAction::Focus);
+}
+
+void ASmartCatAICharacter::OnLayDown(const FInputActionValue& Value)
+{
+	TriggerAnimationAction(ECatAnimationAction::LayDown);
+}
+
+void ASmartCatAICharacter::OnSit(const FInputActionValue& Value)
+{
+	TriggerAnimationAction(ECatAnimationAction::Sit);
+}
+
+void ASmartCatAICharacter::OnSleep(const FInputActionValue& Value)
+{
+	TriggerAnimationAction(ECatAnimationAction::Sleep);
+}
+
+void ASmartCatAICharacter::OnJump(const FInputActionValue& Value)
+{
+	TriggerAnimationAction(ECatAnimationAction::Jump);
+	// Also trigger the built-in jump
+	Jump();
+}
+
+void ASmartCatAICharacter::OnLick(const FInputActionValue& Value)
+{
+	TriggerAnimationAction(ECatAnimationAction::Lick);
+}
+
+void ASmartCatAICharacter::OnMeow(const FInputActionValue& Value)
+{
+	TriggerAnimationAction(ECatAnimationAction::Meow);
+}
+
+void ASmartCatAICharacter::OnStretch(const FInputActionValue& Value)
+{
+	TriggerAnimationAction(ECatAnimationAction::Stretch);
 }
 
 void ASmartCatAICharacter::Tick(float DeltaTime)

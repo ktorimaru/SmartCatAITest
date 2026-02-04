@@ -78,6 +78,14 @@ struct SMARTCATAI_API FQuadrupedLegGaitOutput
 	UPROPERTY(BlueprintReadOnly)
 	FVector PositionOffset = FVector::ZeroVector;
 
+	/** Effector rotation (for IK) - toe points in movement direction, pitched based on swing phase */
+	UPROPERTY(BlueprintReadOnly)
+	FRotator EffectorRotation = FRotator::ZeroRotator;
+
+	/** Full effector transform (position offset + rotation) */
+	UPROPERTY(BlueprintReadOnly)
+	FTransform EffectorTransform = FTransform::Identity;
+
 	/** Foot lift height */
 	UPROPERTY(BlueprintReadOnly)
 	float LiftHeight = 0.0f;
@@ -93,6 +101,10 @@ struct SMARTCATAI_API FQuadrupedLegGaitOutput
 	/** Is this foot in swing phase (lifted) */
 	UPROPERTY(BlueprintReadOnly)
 	bool bIsSwinging = false;
+
+	/** Swing progress (0-1) during swing phase, 0 during stance */
+	UPROPERTY(BlueprintReadOnly)
+	float SwingProgress = 0.0f;
 };
 
 /**

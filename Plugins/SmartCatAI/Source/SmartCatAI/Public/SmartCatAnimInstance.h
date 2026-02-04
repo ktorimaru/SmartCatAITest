@@ -9,6 +9,28 @@
 
 class ASmartCatAICharacter;
 
+/**
+ * Animation action types that can be triggered
+ */
+UENUM(BlueprintType)
+enum class ECatAnimationAction : uint8
+{
+	None     UMETA(DisplayName = "None"),
+	Flip     UMETA(DisplayName = "Flip"),
+	Attack   UMETA(DisplayName = "Attack"),
+	Fall     UMETA(DisplayName = "Fall"),
+	Hear     UMETA(DisplayName = "Hear"),
+	Focus    UMETA(DisplayName = "Focus"),
+	LayDown  UMETA(DisplayName = "Lay Down"),
+	Sit      UMETA(DisplayName = "Sit"),
+	Sleep    UMETA(DisplayName = "Sleep"),
+	Jump     UMETA(DisplayName = "Jump"),
+	Land     UMETA(DisplayName = "Land"),
+	Lick     UMETA(DisplayName = "Lick"),
+	Meow     UMETA(DisplayName = "Meow"),
+	Stretch  UMETA(DisplayName = "Stretch"),
+};
+
 UCLASS()
 class SMARTCATAI_API USmartCatAnimInstance : public UAnimInstance
 {
@@ -40,6 +62,29 @@ protected:
 	UPROPERTY(BlueprintReadOnly, Category = "SmartCatAI|Movement")
 	bool bIsFalling;
 
+	// ============================================
+	// Animation Actions
+	// ============================================
+
+	/** Current requested animation action */
+	UPROPERTY(BlueprintReadOnly, Category = "SmartCatAI|Animation")
+	ECatAnimationAction CurrentAction = ECatAnimationAction::None;
+
+	/** Whether an action animation is currently playing */
+	UPROPERTY(BlueprintReadOnly, Category = "SmartCatAI|Animation")
+	bool bIsPlayingAction = false;
+
+public:
+	/** Request an animation action to play */
+	UFUNCTION(BlueprintCallable, Category = "SmartCatAI|Animation")
+	void TriggerAction(ECatAnimationAction Action);
+
+	/** Clear the current action (call when animation finishes) */
+	UFUNCTION(BlueprintCallable, Category = "SmartCatAI|Animation")
+	void ClearAction();
+
+protected:
+
 	// IK foot effector targets (world space)
 	UPROPERTY(BlueprintReadOnly, Category = "SmartCatAI|IK")
 	FVector IKFootTarget_FrontLeft;
@@ -52,6 +97,19 @@ protected:
 
 	UPROPERTY(BlueprintReadOnly, Category = "SmartCatAI|IK")
 	FVector IKFootTarget_BackRight;
+
+	// IK foot effector transforms (location + rotation for FABRIK)
+	UPROPERTY(BlueprintReadOnly, Category = "SmartCatAI|IK")
+	FTransform IKFootTransform_FrontLeft;
+
+	UPROPERTY(BlueprintReadOnly, Category = "SmartCatAI|IK")
+	FTransform IKFootTransform_FrontRight;
+
+	UPROPERTY(BlueprintReadOnly, Category = "SmartCatAI|IK")
+	FTransform IKFootTransform_BackLeft;
+
+	UPROPERTY(BlueprintReadOnly, Category = "SmartCatAI|IK")
+	FTransform IKFootTransform_BackRight;
 
 	// IK blend weights (0 = animation, 1 = IK target)
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SmartCatAI|IK", meta = (ClampMin = "0.0", ClampMax = "1.0"))

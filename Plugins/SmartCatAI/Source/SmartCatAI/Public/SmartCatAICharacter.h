@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Character.h"
+#include "SmartCatAnimInstance.h"
 #include "SmartCatAICharacter.generated.h"
 
 class UInputMappingContext;
@@ -64,6 +65,43 @@ protected:
 	TObjectPtr<UInputAction> SpeedDownAction;
 
 	// ============================================
+	// Animation Action Inputs
+	// ============================================
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SmartCatAI|Input|Actions")
+	TObjectPtr<UInputAction> FlipAction;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SmartCatAI|Input|Actions")
+	TObjectPtr<UInputAction> AttackAction;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SmartCatAI|Input|Actions")
+	TObjectPtr<UInputAction> HearAction;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SmartCatAI|Input|Actions")
+	TObjectPtr<UInputAction> FocusAction;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SmartCatAI|Input|Actions")
+	TObjectPtr<UInputAction> LayDownAction;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SmartCatAI|Input|Actions")
+	TObjectPtr<UInputAction> SitAction;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SmartCatAI|Input|Actions")
+	TObjectPtr<UInputAction> SleepAction;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SmartCatAI|Input|Actions")
+	TObjectPtr<UInputAction> JumpAction;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SmartCatAI|Input|Actions")
+	TObjectPtr<UInputAction> LickAction;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SmartCatAI|Input|Actions")
+	TObjectPtr<UInputAction> MeowAction;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SmartCatAI|Input|Actions")
+	TObjectPtr<UInputAction> StretchAction;
+
+	// ============================================
 	// Speed Control
 	// ============================================
 
@@ -91,4 +129,20 @@ private:
 
 	/** Called for speed down input */
 	void SpeedDown(const FInputActionValue& Value);
+
+	// Animation action handlers
+	void OnFlip(const FInputActionValue& Value);
+	void OnAttack(const FInputActionValue& Value);
+	void OnHear(const FInputActionValue& Value);
+	void OnFocus(const FInputActionValue& Value);
+	void OnLayDown(const FInputActionValue& Value);
+	void OnSit(const FInputActionValue& Value);
+	void OnSleep(const FInputActionValue& Value);
+	void OnJump(const FInputActionValue& Value);
+	void OnLick(const FInputActionValue& Value);
+	void OnMeow(const FInputActionValue& Value);
+	void OnStretch(const FInputActionValue& Value);
+
+	/** Helper to trigger animation action on the anim instance */
+	void TriggerAnimationAction(ECatAnimationAction Action);
 };

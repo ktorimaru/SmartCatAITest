@@ -149,6 +149,12 @@ void USmartCatAnimInstance::UpdateIKTargets(float DeltaSeconds)
 	IKFootTarget_BackLeft = RawFootLocation_BackLeft + GaitBL.PositionOffset;
 	IKFootTarget_BackRight = RawFootLocation_BackRight + GaitBR.PositionOffset;
 
+	// Build full effector transforms (location + rotation) for FABRIK
+	IKFootTransform_FrontLeft = FTransform(GaitFL.EffectorRotation.Quaternion(), IKFootTarget_FrontLeft);
+	IKFootTransform_FrontRight = FTransform(GaitFR.EffectorRotation.Quaternion(), IKFootTarget_FrontRight);
+	IKFootTransform_BackLeft = FTransform(GaitBL.EffectorRotation.Quaternion(), IKFootTarget_BackLeft);
+	IKFootTransform_BackRight = FTransform(GaitBR.EffectorRotation.Quaternion(), IKFootTarget_BackRight);
+
 	// Set pelvis offset directly (no interpolation)
 	PelvisOffset = CalculatePelvisOffset();
 
@@ -278,5 +284,36 @@ bool USmartCatAnimInstance::ShouldEnableIK() const
 		return false;
 	}
 
+	// Disable IK during certain action animations
+	if (bIsPlayingAction)
+	{
+		switch (CurrentAction)
+		{
+		case ECatAnimationAction::Jump:
+		case ECatAnimationAction::Fall:
+		case ECatAnimationAction::Flip:
+		case ECatAnimationAction::Attack:
+			return false;
+		default:
+			break;
+		}
+	}
+
 	return true;
+}
+
+void USmartCatAnimInstance::TriggerAction(ECatAnimationAction Action)
+{
+	if (Action != ECatAnimationAction::None)
+	{
+		CurrentAction = Action;
+		bIsPlayingAction = true;
+		UE_LOG(LogTemp, Log, TEXT("Cat Action Triggered: %d"), static_cast<int32>(Action));
+	}
+}
+
+void USmartCatAnimInstance::ClearAction()
+{
+	CurrentAction = ECatAnimationAction::None;
+	bIsPlayingAction = false;
 }
