@@ -40,6 +40,9 @@ enum class ECatIKMode : uint8
 	/** IK disabled - animation plays as-is */
 	Disabled UMETA(DisplayName = "Disabled"),
 
+	/** Slope adaptation - rotates mesh to match terrain slope, minimal per-foot IK */
+	SlopeAdaptation UMETA(DisplayName = "Slope Adaptation"),
+
 	/** Terrain adaptation only - adjusts feet to ground, no procedural gait */
 	TerrainAdaptation UMETA(DisplayName = "Terrain Adaptation"),
 
@@ -149,7 +152,7 @@ protected:
 
 	/** Current IK mode */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SmartCatAI|IK")
-	ECatIKMode IKMode = ECatIKMode::TerrainAdaptation;
+	ECatIKMode IKMode = ECatIKMode::SlopeAdaptation;
 
 	// ============================================
 	// Terrain Adaptation IK Data (for Animation Blueprint)
@@ -223,6 +226,56 @@ protected:
 	/** Combined pelvis adjustment as a rotator (for Transform Bone node) */
 	UPROPERTY(BlueprintReadOnly, Category = "SmartCatAI|IK|TerrainAdaptation")
 	FRotator PelvisRotation;
+
+	// ============================================
+	// Slope Adaptation Data (for Animation Blueprint)
+	// Primary terrain adaptation via mesh rotation
+	// ============================================
+
+	/** Ground Z height at front left paw */
+	UPROPERTY(BlueprintReadOnly, Category = "SmartCatAI|IK|Slope")
+	float GroundZ_FL;
+
+	/** Ground Z height at front right paw */
+	UPROPERTY(BlueprintReadOnly, Category = "SmartCatAI|IK|Slope")
+	float GroundZ_FR;
+
+	/** Ground Z height at back left paw */
+	UPROPERTY(BlueprintReadOnly, Category = "SmartCatAI|IK|Slope")
+	float GroundZ_BL;
+
+	/** Ground Z height at back right paw */
+	UPROPERTY(BlueprintReadOnly, Category = "SmartCatAI|IK|Slope")
+	float GroundZ_BR;
+
+	/** Calculated slope pitch in degrees (positive = climbing/nose up, negative = descending/nose down) */
+	UPROPERTY(BlueprintReadOnly, Category = "SmartCatAI|IK|Slope")
+	float SlopePitch;
+
+	/** Calculated slope roll in degrees (positive = left side higher, negative = right side higher) */
+	UPROPERTY(BlueprintReadOnly, Category = "SmartCatAI|IK|Slope")
+	float SlopeRoll;
+
+	/** Combined slope rotation to apply to mesh/root bone */
+	UPROPERTY(BlueprintReadOnly, Category = "SmartCatAI|IK|Slope")
+	FRotator SlopeRotation;
+
+	/** Average ground height across all four paws */
+	UPROPERTY(BlueprintReadOnly, Category = "SmartCatAI|IK|Slope")
+	float AverageGroundZ;
+
+	/** Residual foot offset after slope rotation (for per-foot IK fine-tuning) */
+	UPROPERTY(BlueprintReadOnly, Category = "SmartCatAI|IK|Slope")
+	float ResidualOffset_FL;
+
+	UPROPERTY(BlueprintReadOnly, Category = "SmartCatAI|IK|Slope")
+	float ResidualOffset_FR;
+
+	UPROPERTY(BlueprintReadOnly, Category = "SmartCatAI|IK|Slope")
+	float ResidualOffset_BL;
+
+	UPROPERTY(BlueprintReadOnly, Category = "SmartCatAI|IK|Slope")
+	float ResidualOffset_BR;
 
 	// ============================================
 	// Legacy IK foot effector targets (world space)
@@ -302,6 +355,12 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "SmartCatAI|IK|Config")
 	FName BoneName_Pelvis = TEXT("Cat-Shorthair-Pelvis");
 
+	UPROPERTY(EditDefaultsOnly, Category = "SmartCatAI|IK|Config")
+	FName BoneName_Bell = TEXT("Cat-Shorthair-Bell");
+
+	UPROPERTY(EditDefaultsOnly, Category = "SmartCatAI|IK|Config")
+	FName BoneName_Jaw = TEXT("Cat-Shorthair-Jaw");
+
 	/** How far above the foot bone to start the trace */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SmartCatAI|IK|Config")
 	float TraceStartOffset = 50.0f;
@@ -342,6 +401,30 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SmartCatAI|IK|Config")
 	float FootIKBlendSpeed = 15.0f;
 
+	/** Approximate body length (front to back paw distance) for slope angle calculation */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SmartCatAI|IK|Config")
+	float BodyLength = 60.0f;
+
+	/** Approximate body width (left to right paw distance) for roll angle calculation */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SmartCatAI|IK|Config")
+	float BodyWidth = 20.0f;
+
+	/** Speed of slope rotation interpolation (higher = faster response to terrain) */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SmartCatAI|IK|Config")
+	float SlopeInterpSpeed = 8.0f;
+
+	/** Maximum slope pitch angle in degrees */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SmartCatAI|IK|Config")
+	float MaxSlopePitch = 30.0f;
+
+	/** Maximum slope roll angle in degrees */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SmartCatAI|IK|Config")
+	float MaxSlopeRoll = 15.0f;
+
+	/** Threshold for residual offset to apply per-foot IK (below this, skip foot IK) */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SmartCatAI|IK|Config")
+	float ResidualIKThreshold = 3.0f;
+
 	// ============================================
 	// IK Debug
 	// ============================================
@@ -370,6 +453,9 @@ protected:
 	void UpdateMovementState(float DeltaSeconds);
 	void UpdateIKTargets(float DeltaSeconds);
 	void UpdateGait(float DeltaSeconds);
+
+	/** Update slope adaptation IK (Mode: SlopeAdaptation) - rotates mesh to match terrain */
+	void UpdateSlopeAdaptationIK(float DeltaSeconds);
 
 	/** Update terrain adaptation IK (Mode: TerrainAdaptation) */
 	void UpdateTerrainAdaptationIK(float DeltaSeconds);

@@ -16,7 +16,7 @@ USmartCatAnimInstance::USmartCatAnimInstance()
 	, bIsMoving(false)
 	, bIsFalling(false)
 	, MoveDirection(FVector::ForwardVector)
-	, IKMode(ECatIKMode::TerrainAdaptation)
+	, IKMode(ECatIKMode::SlopeAdaptation)
 	, FootOffset_FL(0.0f)
 	, FootOffset_FR(0.0f)
 	, FootOffset_BL(0.0f)
@@ -33,6 +33,18 @@ USmartCatAnimInstance::USmartCatAnimInstance()
 	, PelvisPitch(0.0f)
 	, PelvisRoll(0.0f)
 	, PelvisRotation(FRotator::ZeroRotator)
+	, GroundZ_FL(0.0f)
+	, GroundZ_FR(0.0f)
+	, GroundZ_BL(0.0f)
+	, GroundZ_BR(0.0f)
+	, SlopePitch(0.0f)
+	, SlopeRoll(0.0f)
+	, SlopeRotation(FRotator::ZeroRotator)
+	, AverageGroundZ(0.0f)
+	, ResidualOffset_FL(0.0f)
+	, ResidualOffset_FR(0.0f)
+	, ResidualOffset_BL(0.0f)
+	, ResidualOffset_BR(0.0f)
 	, IKFootTarget_FrontLeft(FVector::ZeroVector)
 	, IKFootTarget_FrontRight(FVector::ZeroVector)
 	, IKFootTarget_BackLeft(FVector::ZeroVector)
@@ -147,6 +159,13 @@ void USmartCatAnimInstance::UpdateIKTargets(float DeltaSeconds)
 	// Update based on IK mode
 	switch (EffectiveMode)
 	{
+	case ECatIKMode::SlopeAdaptation:
+		UpdateSlopeAdaptationIK(DeltaSeconds);
+		// SlopeAdaptation primarily uses mesh rotation, minimal per-foot IK
+		IKAlpha = FMath::FInterpTo(IKAlpha, TargetAlpha, DeltaSeconds, IKInterpSpeed);
+		PelvisAlpha = IKAlpha;
+		break;
+
 	case ECatIKMode::TerrainAdaptation:
 		UpdateTerrainAdaptationIK(DeltaSeconds);
 		// TerrainAdaptation sets per-foot alphas based on swing detection
@@ -169,6 +188,156 @@ void USmartCatAnimInstance::UpdateIKTargets(float DeltaSeconds)
 	default:
 		break;
 	}
+}
+
+void USmartCatAnimInstance::UpdateSlopeAdaptationIK(float DeltaSeconds)
+{
+	// Slope Adaptation Mode:
+	// 1. Sample ground height at each paw location
+	// 2. Calculate slope pitch (front/back difference) and roll (left/right difference)
+	// 3. Output rotation for mesh/root bone to match terrain slope
+	// 4. Calculate residual offsets for optional per-foot IK fine-tuning
+
+	FVector HitLocation, HitNormal;
+
+	// Get bone positions
+	FVector BoneFL = CachedMesh->GetSocketLocation(BoneName_FrontLeft);
+	FVector BoneFR = CachedMesh->GetSocketLocation(BoneName_FrontRight);
+	FVector BoneBL = CachedMesh->GetSocketLocation(BoneName_BackLeft);
+	FVector BoneBR = CachedMesh->GetSocketLocation(BoneName_BackRight);
+
+	// Sample ground Z at each paw location
+	float RawGroundZ_FL = 0.0f, RawGroundZ_FR = 0.0f, RawGroundZ_BL = 0.0f, RawGroundZ_BR = 0.0f;
+	bool bValidFL = false, bValidFR = false, bValidBL = false, bValidBR = false;
+
+	if (TraceFootToGround(BoneName_FrontLeft, HitLocation, HitNormal))
+	{
+		RawGroundZ_FL = HitLocation.Z;
+		bValidFL = true;
+		GroundNormal_FL = HitNormal;
+	}
+
+	if (TraceFootToGround(BoneName_FrontRight, HitLocation, HitNormal))
+	{
+		RawGroundZ_FR = HitLocation.Z;
+		bValidFR = true;
+		GroundNormal_FR = HitNormal;
+	}
+
+	if (TraceFootToGround(BoneName_BackLeft, HitLocation, HitNormal))
+	{
+		RawGroundZ_BL = HitLocation.Z;
+		bValidBL = true;
+		GroundNormal_BL = HitNormal;
+	}
+
+	if (TraceFootToGround(BoneName_BackRight, HitLocation, HitNormal))
+	{
+		RawGroundZ_BR = HitLocation.Z;
+		bValidBR = true;
+		GroundNormal_BR = HitNormal;
+	}
+
+	// Interpolate ground Z values for smooth transitions
+	GroundZ_FL = FMath::FInterpTo(GroundZ_FL, RawGroundZ_FL, DeltaSeconds, SlopeInterpSpeed);
+	GroundZ_FR = FMath::FInterpTo(GroundZ_FR, RawGroundZ_FR, DeltaSeconds, SlopeInterpSpeed);
+	GroundZ_BL = FMath::FInterpTo(GroundZ_BL, RawGroundZ_BL, DeltaSeconds, SlopeInterpSpeed);
+	GroundZ_BR = FMath::FInterpTo(GroundZ_BR, RawGroundZ_BR, DeltaSeconds, SlopeInterpSpeed);
+
+	// Calculate average ground heights for slope calculation
+	float FrontAvgGround = (GroundZ_FL + GroundZ_FR) * 0.5f;
+	float BackAvgGround = (GroundZ_BL + GroundZ_BR) * 0.5f;
+	float LeftAvgGround = (GroundZ_FL + GroundZ_BL) * 0.5f;
+	float RightAvgGround = (GroundZ_FR + GroundZ_BR) * 0.5f;
+
+	AverageGroundZ = (GroundZ_FL + GroundZ_FR + GroundZ_BL + GroundZ_BR) * 0.25f;
+
+	// Calculate slope pitch: positive = climbing (nose up), negative = descending (nose down)
+	float SlopeHeightDiff = FrontAvgGround - BackAvgGround;
+	float RawSlopePitch = FMath::RadiansToDegrees(FMath::Atan2(SlopeHeightDiff, BodyLength));
+	RawSlopePitch = FMath::Clamp(RawSlopePitch, -MaxSlopePitch, MaxSlopePitch);
+
+	// Calculate slope roll: positive = left side higher, negative = right side higher
+	float RollHeightDiff = LeftAvgGround - RightAvgGround;
+	float RawSlopeRoll = FMath::RadiansToDegrees(FMath::Atan2(RollHeightDiff, BodyWidth));
+	RawSlopeRoll = FMath::Clamp(RawSlopeRoll, -MaxSlopeRoll, MaxSlopeRoll);
+
+	// Interpolate slope angles for smooth rotation
+	SlopePitch = FMath::FInterpTo(SlopePitch, RawSlopePitch, DeltaSeconds, SlopeInterpSpeed);
+	SlopeRoll = FMath::FInterpTo(SlopeRoll, RawSlopeRoll, DeltaSeconds, SlopeInterpSpeed);
+
+	// Build slope rotation (pitch and roll only, no yaw)
+	SlopeRotation = FRotator(SlopePitch, 0.0f, SlopeRoll);
+
+	// Calculate expected paw heights after slope rotation is applied
+	// This uses simple trigonometry to estimate where paws would be after mesh rotates
+	float PitchRad = FMath::DegreesToRadians(SlopePitch);
+	float RollRad = FMath::DegreesToRadians(SlopeRoll);
+
+	// Approximate Z adjustment from rotation for each corner
+	// Front paws move up/down based on pitch, left/right paws based on roll
+	float HalfLength = BodyLength * 0.5f;
+	float HalfWidth = BodyWidth * 0.5f;
+
+	float RotationAdjust_FL = HalfLength * FMath::Sin(PitchRad) + HalfWidth * FMath::Sin(RollRad);
+	float RotationAdjust_FR = HalfLength * FMath::Sin(PitchRad) - HalfWidth * FMath::Sin(RollRad);
+	float RotationAdjust_BL = -HalfLength * FMath::Sin(PitchRad) + HalfWidth * FMath::Sin(RollRad);
+	float RotationAdjust_BR = -HalfLength * FMath::Sin(PitchRad) - HalfWidth * FMath::Sin(RollRad);
+
+	// Calculate residual offsets (difference between actual ground and expected position after rotation)
+	// These are for optional per-foot IK fine-tuning on uneven terrain
+	float ExpectedZ_FL = AverageGroundZ + RotationAdjust_FL + FootHeight;
+	float ExpectedZ_FR = AverageGroundZ + RotationAdjust_FR + FootHeight;
+	float ExpectedZ_BL = AverageGroundZ + RotationAdjust_BL + FootHeight;
+	float ExpectedZ_BR = AverageGroundZ + RotationAdjust_BR + FootHeight;
+
+	ResidualOffset_FL = (GroundZ_FL + FootHeight) - ExpectedZ_FL;
+	ResidualOffset_FR = (GroundZ_FR + FootHeight) - ExpectedZ_FR;
+	ResidualOffset_BL = (GroundZ_BL + FootHeight) - ExpectedZ_BL;
+	ResidualOffset_BR = (GroundZ_BR + FootHeight) - ExpectedZ_BR;
+
+	// Clamp residual offsets
+	ResidualOffset_FL = FMath::Clamp(ResidualOffset_FL, -MaxIKOffset, MaxIKOffset);
+	ResidualOffset_FR = FMath::Clamp(ResidualOffset_FR, -MaxIKOffset, MaxIKOffset);
+	ResidualOffset_BL = FMath::Clamp(ResidualOffset_BL, -MaxIKOffset, MaxIKOffset);
+	ResidualOffset_BR = FMath::Clamp(ResidualOffset_BR, -MaxIKOffset, MaxIKOffset);
+
+	// Set per-foot IK alphas based on residual offset magnitude
+	// Only apply foot IK if residual is significant (uneven terrain)
+	IKAlpha_FrontLeft = (FMath::Abs(ResidualOffset_FL) > ResidualIKThreshold) ? 1.0f : 0.0f;
+	IKAlpha_FrontRight = (FMath::Abs(ResidualOffset_FR) > ResidualIKThreshold) ? 1.0f : 0.0f;
+	IKAlpha_BackLeft = (FMath::Abs(ResidualOffset_BL) > ResidualIKThreshold) ? 1.0f : 0.0f;
+	IKAlpha_BackRight = (FMath::Abs(ResidualOffset_BR) > ResidualIKThreshold) ? 1.0f : 0.0f;
+
+	// Also populate the standard foot offsets for compatibility
+	FootOffset_FL = ResidualOffset_FL;
+	FootOffset_FR = ResidualOffset_FR;
+	FootOffset_BL = ResidualOffset_BL;
+	FootOffset_BR = ResidualOffset_BR;
+
+	// Update pelvis data (use slope rotation)
+	PelvisPitch = SlopePitch;
+	PelvisRoll = SlopeRoll;
+	PelvisRotation = SlopeRotation;
+	PelvisOffsetZ = 0.0f; // Height adjustment handled by rotation, not offset
+
+	// Calculate foot rotations from ground normals
+	FootRotation_FL = CalculateFootRotationFromNormal(GroundNormal_FL);
+	FootRotation_FR = CalculateFootRotationFromNormal(GroundNormal_FR);
+	FootRotation_BL = CalculateFootRotationFromNormal(GroundNormal_BL);
+	FootRotation_BR = CalculateFootRotationFromNormal(GroundNormal_BR);
+
+	// Populate world-space IK targets (for residual foot IK if needed)
+	IKFootTarget_FrontLeft = BoneFL + FVector(0, 0, ResidualOffset_FL);
+	IKFootTarget_FrontRight = BoneFR + FVector(0, 0, ResidualOffset_FR);
+	IKFootTarget_BackLeft = BoneBL + FVector(0, 0, ResidualOffset_BL);
+	IKFootTarget_BackRight = BoneBR + FVector(0, 0, ResidualOffset_BR);
+
+	// Build transforms
+	IKFootTransform_FrontLeft = FTransform(FootRotation_FL.Quaternion(), IKFootTarget_FrontLeft);
+	IKFootTransform_FrontRight = FTransform(FootRotation_FR.Quaternion(), IKFootTarget_FrontRight);
+	IKFootTransform_BackLeft = FTransform(FootRotation_BL.Quaternion(), IKFootTarget_BackLeft);
+	IKFootTransform_BackRight = FTransform(FootRotation_BR.Quaternion(), IKFootTarget_BackRight);
 }
 
 void USmartCatAnimInstance::UpdateTerrainAdaptationIK(float DeltaSeconds)
@@ -564,12 +733,12 @@ void USmartCatAnimInstance::CalculatePelvisRotation()
 	{
 		FVector FrontMid = (CachedMesh->GetSocketLocation(BoneName_FrontLeft) + CachedMesh->GetSocketLocation(BoneName_FrontRight)) * 0.5f;
 		FVector BackMid = (CachedMesh->GetSocketLocation(BoneName_BackLeft) + CachedMesh->GetSocketLocation(BoneName_BackRight)) * 0.5f;
-		float BodyLength = FVector::Dist2D(FrontMid, BackMid);
+		float ComputedBodyLength = FVector::Dist2D(FrontMid, BackMid);
 
-		if (BodyLength > 1.0f)
+		if (ComputedBodyLength > 1.0f)
 		{
 			float HeightDiff = FrontAvgZ - BackAvgZ;
-			PelvisPitch = FMath::RadiansToDegrees(FMath::Atan2(HeightDiff, BodyLength));
+			PelvisPitch = FMath::RadiansToDegrees(FMath::Atan2(HeightDiff, ComputedBodyLength));
 			PelvisPitch = FMath::Clamp(PelvisPitch, -15.0f, 15.0f); // Limit rotation
 		}
 	}
@@ -583,12 +752,12 @@ void USmartCatAnimInstance::CalculatePelvisRotation()
 	{
 		FVector LeftMid = (CachedMesh->GetSocketLocation(BoneName_FrontLeft) + CachedMesh->GetSocketLocation(BoneName_BackLeft)) * 0.5f;
 		FVector RightMid = (CachedMesh->GetSocketLocation(BoneName_FrontRight) + CachedMesh->GetSocketLocation(BoneName_BackRight)) * 0.5f;
-		float BodyWidth = FVector::Dist2D(LeftMid, RightMid);
+		float ComputedBodyWidth = FVector::Dist2D(LeftMid, RightMid);
 
-		if (BodyWidth > 1.0f)
+		if (ComputedBodyWidth > 1.0f)
 		{
 			float HeightDiff = LeftAvgZ - RightAvgZ;
-			PelvisRoll = FMath::RadiansToDegrees(FMath::Atan2(HeightDiff, BodyWidth));
+			PelvisRoll = FMath::RadiansToDegrees(FMath::Atan2(HeightDiff, ComputedBodyWidth));
 			PelvisRoll = FMath::Clamp(PelvisRoll, -10.0f, 10.0f); // Limit rotation
 		}
 	}
@@ -628,12 +797,13 @@ void USmartCatAnimInstance::StartRuntimeDebugRecording()
 
 	// Write header immediately to file
 	FString FilePath = FPaths::ProjectSavedDir() / TEXT("RuntimeIKDebug.csv");
-	FString Header = TEXT("Time,Speed,IKMode,IKEnabled,");
-	Header += TEXT("FL_Height,FL_Alpha,FL_Offset,");
-	Header += TEXT("FR_Height,FR_Alpha,FR_Offset,");
-	Header += TEXT("BL_Height,BL_Alpha,BL_Offset,");
-	Header += TEXT("BR_Height,BR_Alpha,BR_Offset,");
-	Header += TEXT("PelvisZ,PelvisPitch,PelvisRoll\n");
+	FString Header = TEXT("Time,Speed,");
+	Header += TEXT("FL_Z,FL_GroundZ,FL_Diff,");
+	Header += TEXT("FR_Z,FR_GroundZ,FR_Diff,");
+	Header += TEXT("BL_Z,BL_GroundZ,BL_Diff,");
+	Header += TEXT("BR_Z,BR_GroundZ,BR_Diff,");
+	Header += TEXT("Bell_Z,Bell_GroundZ,Bell_Diff,");
+	Header += TEXT("Jaw_Z,Jaw_GroundZ,Jaw_Diff\n");
 
 	FFileHelper::SaveStringToFile(Header, *FilePath);
 	UE_LOG(LogTemp, Warning, TEXT("SmartCatAI: Started runtime debug recording to %s"), *FilePath);
@@ -647,87 +817,160 @@ void USmartCatAnimInstance::StopRuntimeDebugRecording()
 
 void USmartCatAnimInstance::PrintDebugState()
 {
+	if (!CachedMesh)
+	{
+		CachedMesh = GetSkelMeshComponent();
+		if (!CachedMesh)
+		{
+			return;
+		}
+	}
+
+	// Get bone world positions
+	FVector BoneFL = CachedMesh->GetSocketLocation(BoneName_FrontLeft);
+	FVector BoneFR = CachedMesh->GetSocketLocation(BoneName_FrontRight);
+	FVector BoneBL = CachedMesh->GetSocketLocation(BoneName_BackLeft);
+	FVector BoneBR = CachedMesh->GetSocketLocation(BoneName_BackRight);
+	FVector BoneBell = CachedMesh->GetSocketLocation(BoneName_Bell);
+	FVector BoneJaw = CachedMesh->GetSocketLocation(BoneName_Jaw);
+
+	// Trace to find ground at each location
+	FVector HitLocation, HitNormal;
+	float LocalGroundZ_FL = 0.0f, LocalGroundZ_FR = 0.0f, LocalGroundZ_BL = 0.0f, LocalGroundZ_BR = 0.0f;
+	float LocalGroundZ_Bell = 0.0f, LocalGroundZ_Jaw = 0.0f;
+
+	if (TraceFootToGround(BoneName_FrontLeft, HitLocation, HitNormal))
+		LocalGroundZ_FL = HitLocation.Z;
+	if (TraceFootToGround(BoneName_FrontRight, HitLocation, HitNormal))
+		LocalGroundZ_FR = HitLocation.Z;
+	if (TraceFootToGround(BoneName_BackLeft, HitLocation, HitNormal))
+		LocalGroundZ_BL = HitLocation.Z;
+	if (TraceFootToGround(BoneName_BackRight, HitLocation, HitNormal))
+		LocalGroundZ_BR = HitLocation.Z;
+
+	// Trace for Bell and Jaw (use same trace method but from those bone positions)
+	if (CatCharacter)
+	{
+		FCollisionQueryParams QueryParams;
+		QueryParams.AddIgnoredActor(CatCharacter);
+		FHitResult HitResult;
+
+		// Bell trace
+		FVector BellStart = BoneBell + FVector(0, 0, 50.0f);
+		FVector BellEnd = BoneBell - FVector(0, 0, 200.0f);
+		if (CatCharacter->GetWorld()->LineTraceSingleByChannel(HitResult, BellStart, BellEnd, TraceChannel, QueryParams))
+			LocalGroundZ_Bell = HitResult.ImpactPoint.Z;
+
+		// Jaw trace
+		FVector JawStart = BoneJaw + FVector(0, 0, 50.0f);
+		FVector JawEnd = BoneJaw - FVector(0, 0, 200.0f);
+		if (CatCharacter->GetWorld()->LineTraceSingleByChannel(HitResult, JawStart, JawEnd, TraceChannel, QueryParams))
+			LocalGroundZ_Jaw = HitResult.ImpactPoint.Z;
+	}
+
+	// Calculate differences (bone Z - ground Z)
+	float Diff_FL = BoneFL.Z - LocalGroundZ_FL;
+	float Diff_FR = BoneFR.Z - LocalGroundZ_FR;
+	float Diff_BL = BoneBL.Z - LocalGroundZ_BL;
+	float Diff_BR = BoneBR.Z - LocalGroundZ_BR;
+	float Diff_Bell = BoneBell.Z - LocalGroundZ_Bell;
+	float Diff_Jaw = BoneJaw.Z - LocalGroundZ_Jaw;
+
+	// Get IK mode name
 	FString IKModeName;
 	switch (IKMode)
 	{
-	case ECatIKMode::Disabled: IKModeName = TEXT("Disabled"); break;
-	case ECatIKMode::TerrainAdaptation: IKModeName = TEXT("TerrainAdapt"); break;
-	case ECatIKMode::FullProcedural: IKModeName = TEXT("Procedural"); break;
-	default: IKModeName = TEXT("Unknown"); break;
-	}
-
-	// Calculate heights for display (same calculation as in UpdateTerrainAdaptationIK)
-	FVector HitLocation, HitNormal;
-	float Height_FL = 0.0f, Height_FR = 0.0f, Height_BL = 0.0f, Height_BR = 0.0f;
-
-	if (CachedMesh)
-	{
-		FVector BoneFL = CachedMesh->GetSocketLocation(BoneName_FrontLeft);
-		FVector BoneFR = CachedMesh->GetSocketLocation(BoneName_FrontRight);
-		FVector BoneBL = CachedMesh->GetSocketLocation(BoneName_BackLeft);
-		FVector BoneBR = CachedMesh->GetSocketLocation(BoneName_BackRight);
-
-		if (TraceFootToGround(BoneName_FrontLeft, HitLocation, HitNormal))
-			Height_FL = BoneFL.Z - (HitLocation.Z + FootHeight);
-		if (TraceFootToGround(BoneName_FrontRight, HitLocation, HitNormal))
-			Height_FR = BoneFR.Z - (HitLocation.Z + FootHeight);
-		if (TraceFootToGround(BoneName_BackLeft, HitLocation, HitNormal))
-			Height_BL = BoneBL.Z - (HitLocation.Z + FootHeight);
-		if (TraceFootToGround(BoneName_BackRight, HitLocation, HitNormal))
-			Height_BR = BoneBR.Z - (HitLocation.Z + FootHeight);
+	case ECatIKMode::Disabled: IKModeName = TEXT("OFF"); break;
+	case ECatIKMode::SlopeAdaptation: IKModeName = TEXT("SLOPE"); break;
+	case ECatIKMode::TerrainAdaptation: IKModeName = TEXT("TERRAIN"); break;
+	case ECatIKMode::FullProcedural: IKModeName = TEXT("PROCEDURAL"); break;
+	default: IKModeName = TEXT("UNKNOWN"); break;
 	}
 
 	// Print to screen
 	if (GEngine)
 	{
 		GEngine->AddOnScreenDebugMessage(100, 0.0f, FColor::White,
-			FString::Printf(TEXT("Speed: %.1f | Mode: %s | IKEnabled: %d | SwingThreshold: %.1f"),
-				GroundSpeed, *IKModeName, bIKEnabled ? 1 : 0, SwingPhaseHeightThreshold));
+			FString::Printf(TEXT("Speed: %.1f | IK: %s"),
+				GroundSpeed, *IKModeName));
 
-		GEngine->AddOnScreenDebugMessage(101, 0.0f, FColor::Yellow,
-			FString::Printf(TEXT("FL: Height=%.1f Alpha=%.2f Offset=%.1f %s"),
-				Height_FL, IKAlpha_FrontLeft, FootOffset_FL, Height_FL > SwingPhaseHeightThreshold ? TEXT("[SWING]") : TEXT("[STANCE]")));
+		// Show slope data if in SlopeAdaptation mode
+		if (IKMode == ECatIKMode::SlopeAdaptation)
+		{
+			GEngine->AddOnScreenDebugMessage(101, 0.0f, FColor::Orange,
+				FString::Printf(TEXT("SLOPE: Pitch=%.1f  Roll=%.1f  AvgGround=%.1f"),
+					SlopePitch, SlopeRoll, AverageGroundZ));
 
-		GEngine->AddOnScreenDebugMessage(102, 0.0f, FColor::Yellow,
-			FString::Printf(TEXT("FR: Height=%.1f Alpha=%.2f Offset=%.1f %s"),
-				Height_FR, IKAlpha_FrontRight, FootOffset_FR, Height_FR > SwingPhaseHeightThreshold ? TEXT("[SWING]") : TEXT("[STANCE]")));
+			GEngine->AddOnScreenDebugMessage(102, 0.0f, FColor::Yellow,
+				FString::Printf(TEXT("FL: Ground=%.1f  Residual=%.1f  Alpha=%.1f"),
+					this->GroundZ_FL, ResidualOffset_FL, IKAlpha_FrontLeft));
 
-		GEngine->AddOnScreenDebugMessage(103, 0.0f, FColor::Cyan,
-			FString::Printf(TEXT("BL: Height=%.1f Alpha=%.2f Offset=%.1f %s"),
-				Height_BL, IKAlpha_BackLeft, FootOffset_BL, Height_BL > SwingPhaseHeightThreshold ? TEXT("[SWING]") : TEXT("[STANCE]")));
+			GEngine->AddOnScreenDebugMessage(103, 0.0f, FColor::Yellow,
+				FString::Printf(TEXT("FR: Ground=%.1f  Residual=%.1f  Alpha=%.1f"),
+					this->GroundZ_FR, ResidualOffset_FR, IKAlpha_FrontRight));
 
-		GEngine->AddOnScreenDebugMessage(104, 0.0f, FColor::Cyan,
-			FString::Printf(TEXT("BR: Height=%.1f Alpha=%.2f Offset=%.1f %s"),
-				Height_BR, IKAlpha_BackRight, FootOffset_BR, Height_BR > SwingPhaseHeightThreshold ? TEXT("[SWING]") : TEXT("[STANCE]")));
+			GEngine->AddOnScreenDebugMessage(104, 0.0f, FColor::Cyan,
+				FString::Printf(TEXT("BL: Ground=%.1f  Residual=%.1f  Alpha=%.1f"),
+					this->GroundZ_BL, ResidualOffset_BL, IKAlpha_BackLeft));
 
-		GEngine->AddOnScreenDebugMessage(105, 0.0f, FColor::Green,
-			FString::Printf(TEXT("Pelvis: Z=%.1f Pitch=%.1f Roll=%.1f"),
-				PelvisOffsetZ, PelvisPitch, PelvisRoll));
+			GEngine->AddOnScreenDebugMessage(105, 0.0f, FColor::Cyan,
+				FString::Printf(TEXT("BR: Ground=%.1f  Residual=%.1f  Alpha=%.1f"),
+					this->GroundZ_BR, ResidualOffset_BR, IKAlpha_BackRight));
+		}
+		else
+		{
+			GEngine->AddOnScreenDebugMessage(101, 0.0f, FColor::Yellow,
+				FString::Printf(TEXT("FL: Z=%.1f  Ground=%.1f  Diff=%.1f"),
+					BoneFL.Z, LocalGroundZ_FL, Diff_FL));
+
+			GEngine->AddOnScreenDebugMessage(102, 0.0f, FColor::Yellow,
+				FString::Printf(TEXT("FR: Z=%.1f  Ground=%.1f  Diff=%.1f"),
+					BoneFR.Z, LocalGroundZ_FR, Diff_FR));
+
+			GEngine->AddOnScreenDebugMessage(103, 0.0f, FColor::Cyan,
+				FString::Printf(TEXT("BL: Z=%.1f  Ground=%.1f  Diff=%.1f"),
+					BoneBL.Z, LocalGroundZ_BL, Diff_BL));
+
+			GEngine->AddOnScreenDebugMessage(104, 0.0f, FColor::Cyan,
+				FString::Printf(TEXT("BR: Z=%.1f  Ground=%.1f  Diff=%.1f"),
+					BoneBR.Z, LocalGroundZ_BR, Diff_BR));
+
+			GEngine->AddOnScreenDebugMessage(105, 0.0f, FColor::Green,
+				FString::Printf(TEXT("Bell: Z=%.1f  Ground=%.1f  Diff=%.1f"),
+					BoneBell.Z, LocalGroundZ_Bell, Diff_Bell));
+
+			GEngine->AddOnScreenDebugMessage(106, 0.0f, FColor::Magenta,
+				FString::Printf(TEXT("Jaw: Z=%.1f  Ground=%.1f  Diff=%.1f"),
+					BoneJaw.Z, LocalGroundZ_Jaw, Diff_Jaw));
+		}
 	}
 
-	// Always append to file if recording (write immediately, don't buffer)
+	// Always append to file if recording
 	if (bIsRecordingDebug)
 	{
 		static float RecordingTime = 0.0f;
 		RecordingTime += GetWorld() ? GetWorld()->GetDeltaSeconds() : 0.016f;
 
-		FString Row = FString::Printf(TEXT("%.3f,%.1f,%s,%d,"),
-			RecordingTime, GroundSpeed, *IKModeName, bIKEnabled ? 1 : 0);
+		FString Row = FString::Printf(TEXT("%.3f,%.1f,"),
+			RecordingTime, GroundSpeed);
 
-		Row += FString::Printf(TEXT("%.2f,%.3f,%.2f,"),
-			Height_FL, IKAlpha_FrontLeft, FootOffset_FL);
+		Row += FString::Printf(TEXT("%.2f,%.2f,%.2f,"),
+			BoneFL.Z, LocalGroundZ_FL, Diff_FL);
 
-		Row += FString::Printf(TEXT("%.2f,%.3f,%.2f,"),
-			Height_FR, IKAlpha_FrontRight, FootOffset_FR);
+		Row += FString::Printf(TEXT("%.2f,%.2f,%.2f,"),
+			BoneFR.Z, LocalGroundZ_FR, Diff_FR);
 
-		Row += FString::Printf(TEXT("%.2f,%.3f,%.2f,"),
-			Height_BL, IKAlpha_BackLeft, FootOffset_BL);
+		Row += FString::Printf(TEXT("%.2f,%.2f,%.2f,"),
+			BoneBL.Z, LocalGroundZ_BL, Diff_BL);
 
-		Row += FString::Printf(TEXT("%.2f,%.3f,%.2f,"),
-			Height_BR, IKAlpha_BackRight, FootOffset_BR);
+		Row += FString::Printf(TEXT("%.2f,%.2f,%.2f,"),
+			BoneBR.Z, LocalGroundZ_BR, Diff_BR);
+
+		Row += FString::Printf(TEXT("%.2f,%.2f,%.2f,"),
+			BoneBell.Z, LocalGroundZ_Bell, Diff_Bell);
 
 		Row += FString::Printf(TEXT("%.2f,%.2f,%.2f\n"),
-			PelvisOffsetZ, PelvisPitch, PelvisRoll);
+			BoneJaw.Z, LocalGroundZ_Jaw, Diff_Jaw);
 
 		// Append directly to file
 		FString FilePath = FPaths::ProjectSavedDir() / TEXT("RuntimeIKDebug.csv");
