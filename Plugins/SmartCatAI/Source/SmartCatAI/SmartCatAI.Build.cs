@@ -43,6 +43,9 @@ public class SmartCatAI : ModuleRules
 				"EnhancedInput",
 				"InputCore",
 				"AnimationCore",
+				"AIModule",
+				"NavigationSystem",
+				"GameplayTasks",
 			}
 			);
 		
